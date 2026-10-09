@@ -88,7 +88,7 @@ If you manage your scripts locally using Node.js and Google's [clasp CLI](https:
 5. **Configure Properties & Deploy:**
    - Open the web editor via `clasp open`.
    - Configure your **Script Properties** in Project Settings (⚙️).
-   - Click **Deploy** > **New deployment** > **Web app** (`Execute as: Me`, `Access: Anyone`).
+   - Click **Deploy** > **New deployment** > **Web app** (`Execute as: Me`, `Access: Anyone or Domain`).
    - Run the `onOpen` function once in the editor to initialize the spreadsheet interface.
 
 ---
