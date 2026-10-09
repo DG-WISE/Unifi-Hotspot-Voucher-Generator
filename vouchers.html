@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>Printable Wi-Fi Vouchers — <?= siteTitle ?></title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f4f6f9;
+      margin: 0;
+      padding: 20px;
+    }
+    .header-bar {
+      background: #1e293b;
+      color: white;
+      padding: 15px 20px;
+      margin-bottom: 25px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .header-bar h2 { margin: 0; font-size: 18px; }
+    .print-btn {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .print-btn:hover { background: #0369a1; }
+    
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 15px;
+    }
+    
+    .ticket {
+      background: white;
+      border: 2px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+      page-break-inside: avoid;
+    }
+
+    /* General Access (8 Hours) Styling */
+    .ticket.general {
+      background: #f8fafc;
+      border-color: #bae6fd;
+    }
+    .ticket.general .pass-badge {
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+    }
+    .ticket.general .code-box {
+      color: #0369a1;
+      border-color: #bae6fd;
+      background: #ffffff;
+    }
+
+    /* Extended Access (3 Days) Styling */
+    .ticket.extended {
+      background: #f0fdf4;
+      border-color: #a7f3d0;
+    }
+    .ticket.extended .pass-badge {
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #a7f3d0;
+    }
+    .ticket.extended .code-box {
+      color: #15803d;
+      border-color: #a7f3d0;
+      background: #ffffff;
+    }
+
+    .network-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #dc3545; 
+      margin-bottom: 6px;
+      font-weight: bold;
+    }
+    .pass-badge {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: bold;
+      padding: 4px 10px;
+      border-radius: 12px;
+      margin-bottom: 12px;
+    }
+    .code-box {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 20px;
+      font-weight: bold;
+      padding: 8px 0;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .meta-spec {
+      font-size: 11px;
+      color: #475569;
+      margin: 2px 0;
+    }
+    .created-date {
+      font-size: 9px;
+      color: #94a3b8;
+      margin-top: 8px;
+    }
+
+    @media print {
+      .header-bar { display: none; }
+      body { background: white; padding: 0; }
+      .grid-container {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      .ticket {
+        box-shadow: none;
+        border: 1.5px dashed #64748b;
+        background: white !important;
+      }
+      .code-box { background: none !important; border: 1px solid #94a3b8 !important; }
+      .pass-badge { border: 1px solid #64748b !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-bar">
+    <h2>Guest Access Vouchers — <?= siteTitle ?></h2>
+    <button class="print-btn" onclick="window.print()">🖨️ Print Tickets</button>
+  </div>
+
+  <div class="grid-container">
+    <? if (vouchers.length === 0) { ?>
+      <p style="grid-column: 1/-1; text-align:center; color:#64748b;">No active vouchers discovered on the controller for this site location.</p>
+    <? } else { ?>
+      <? for (var i = 0; i < vouchers.length; i++) { 
+           var isExtended = (vouchers[i][2] === '3 Days');
+      ?>
+        <div class="ticket <?= isExtended ? 'extended' : 'general' ?>">
+          <div class="network-title"><?= siteTitle ?></div>
+          <div class="pass-badge"><?= isExtended ? 'Extended Access' : 'General Access' ?></div>
+          <div class="code-box"><?= vouchers[i][0] ?></div>
+          <div class="meta-spec">⏳ <strong>Duration:</strong> <?= vouchers[i][2] || '8 Hours' ?></div>
+          <div class="meta-spec">👤 <strong>Device Limit:</strong> Single Use</div>
+          <div class="created-date">Generated: <?= vouchers[i][1] ?></div>
+        </div>
+      <? } ?>
+    <? } ?>
+  </div>
+
+</body>
+</html>
