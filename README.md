@@ -116,7 +116,7 @@ Multi-site targets are defined inside a JSON array stored in the `UNIFI_SITES_CO
 
 ### Property Descriptions
 - `siteName`: Must match the exact name of the tab in your Google Sheet.
-- `consoleId`: The UniFi hardware Console UUID and Site ID (`<console_uuid>:<site_id>`) found in your UniFi Site Manager URL.
+- `consoleId`: The UniFi hardware Console UUID and Site ID (`<console_uuid>:<site_id>`) found in your UniFi Site Manager URL After https://unifi.ui.com/consoles/ and before /network/.
 - `recipients`: Comma-separated list of email addresses that receive weekly voucher notifications.
 - `purgeBeforeSync`: Security flag. When set to `true`, the script will permanently delete all active unused vouchers on that console during the next sync pass before generating a fresh batch.
 
