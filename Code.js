@@ -14,7 +14,10 @@ function weeklyAutoReplenishAndEmail() {
   console.log("Starting master multi-site automated replenishment execution...");
   
   const sites = getParsedSitesConfig();
-  if (sites.length === 0) return;
+  if (sites.length === 0) {
+    console.warn("[Weekly Auto Replenish] No site configurations found in UNIFI_SITES_CONFIG.");
+    return;
+  }
 
   const weeklySecureToken = getOrGenerateWeeklyToken(true);
 
@@ -91,10 +94,12 @@ function weeklyAutoReplenishAndEmail() {
  */
 function syncActiveSheetTabVouchers() {
   const sheetName = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getName();
+  console.log(`[Sync Active Tab] Triggered for tab: "${sheetName}"`);
   const sites = getParsedSitesConfig();
   const activeSite = sites.find(s => s.siteName === sheetName);
   
   if (!activeSite) {
+    console.warn(`[Sync Active Tab] No site configuration matching active tab name: "${sheetName}"`);
     SpreadsheetApp.getUi().alert(
       "Operation Cancelled", 
       "The active spreadsheet tab name does not match any configured school profile in your JSON variables properties box.", 
@@ -114,10 +119,12 @@ function syncActiveSheetTabVouchers() {
  */
 function syncAndEmailActiveTabSite() {
   const sheetName = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getName();
+  console.log(`[Sync & Email Active Tab] Triggered for tab: "${sheetName}"`);
   const sites = getParsedSitesConfig();
   const site = sites.find(s => s.siteName === sheetName);
   
   if (!site) {
+    console.warn(`[Sync & Email Active Tab] No site configuration matching active tab name: "${sheetName}"`);
     SpreadsheetApp.getUi().alert(
       "Operation Cancelled", 
       "The active spreadsheet tab name does not match any configured school profile in your JSON properties box.", 
@@ -127,6 +134,7 @@ function syncAndEmailActiveTabSite() {
   }
   
   if (!DEPLOYMENT_ID) {
+    console.error(`[Sync & Email Active Tab] Missing UNIFI_DEPLOYMENT_ID script property.`);
     SpreadsheetApp.getUi().alert("Setup Required", "Please save your UNIFI_DEPLOYMENT_ID to Script Properties first.", SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
@@ -201,12 +209,20 @@ function syncAndEmailActiveTabSite() {
  */
 function purgeAllUnusedVouchersDirect(siteConfig) {
   try {
+    console.log(`[Purge Direct] Initiating purge for site: ${siteConfig.siteName}`);
     const realSiteId = getValidSiteId(siteConfig.consoleId);
-    const cloudUrl = `https://api.ui.com/v1/connector/consoles/${siteConfig.consoleId}/proxy/network/integration/v1/sites/${realSiteId}/hotspot/vouchers`;
+    const cloudUrl = 'https://api.ui.com/v1/connector/consoles/' + siteConfig.consoleId + '/proxy/network/integration/v1/sites/' + realSiteId + '/hotspot/vouchers';
+    console.log(`[Purge Direct] Fetching all vouchers to identify unused entries...`);
     const unused = fetchAllVouchersFromCloud(cloudUrl).filter(v => v.authorizedGuestCount === 0);
+    console.log(`[Purge Direct] Found ${unused.length} unused vouchers to purge.`);
     
     for (let i = 0; i < unused.length; i++) {
-      UrlFetchApp.fetch(`${cloudUrl}/${unused[i].id}`, { method: 'delete', headers: { 'X-API-Key': API_KEY, 'Accept': 'application/json' }, muteHttpExceptions: true });
+      console.log(`[Purge Direct API] Deleting voucher ID: ${unused[i].id} (${i + 1}/${unused.length})...`);
+      const resp = UrlFetchApp.fetch(cloudUrl + '/' + unused[i].id, { method: 'delete', headers: { 'X-API-Key': API_KEY, 'Accept': 'application/json' }, muteHttpExceptions: true });
+      const code = resp.getResponseCode();
+      if (code >= 400) {
+        console.warn(`[Purge Direct API Warning] Failed to delete voucher ${unused[i].id} (HTTP ${code}): ${resp.getContentText()}`);
+      }
     }
     console.log(`Security Purge Complete: Wiped ${unused.length} vouchers from the controller at ${siteConfig.siteName}`);
   } catch (e) {
@@ -218,69 +234,98 @@ function purgeAllUnusedVouchersDirect(siteConfig) {
  * Manual Dashboard Trigger: Syncs all configured sites at once.
  */
 function masterManualSyncAll() {
+  console.log("[Master Sync All] Starting manual sync for all configured sites...");
   const sites = getParsedSitesConfig();
-  if (sites.length === 0) return;
+  if (sites.length === 0) {
+    console.warn("[Master Sync All] No site configurations found.");
+    return;
+  }
   
   logToUiToast("Initializing batch top-up loop...", "Sync Running 🔄");
   sites.forEach(site => syncSingleSiteVouchers(site));
   logToUiToast("All sheets updated to match controller states!", "Complete ✅");
+  console.log("[Master Sync All] Finished sync across all site configurations.");
 }
 
 /**
  * Core processor for a singular specified site profile. Handles sheet tab creation and API requests.
  */
 function syncSingleSiteVouchers(siteConfig) {
+  console.log(`[Sync Single Site] Beginning voucher sync process for: ${siteConfig.siteName}`);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(siteConfig.siteName);
   
   if (!sheet) {
+    console.log(`[Sheet Ops] Tab "${siteConfig.siteName}" not found. Inserting new sheet.`);
     sheet = ss.insertSheet(siteConfig.siteName);
+    console.log(`[Sheet Ops] Writing header row to new sheet "${siteConfig.siteName}".`);
     sheet.getRange(1, 1, 1, 3).setValues([["Voucher Code", "Duration", "Created At"]]).setFontWeight("bold");
     SpreadsheetApp.flush();
   } else {
+    console.log(`[Sheet Ops] Found existing tab "${siteConfig.siteName}". Formatting header row.`);
     sheet.getRange(1, 1, 1, 3).setValues([["Voucher Code", "Duration", "Created At"]]).setFontWeight("bold");
   }
 
   try {
+    console.log(`[Sync Single Site] Resolving site ID for console: ${siteConfig.consoleId}`);
     const realSiteId = getValidSiteId(siteConfig.consoleId);
-    const cloudUrl = `https://api.ui.com/v1/connector/consoles/${siteConfig.consoleId}/proxy/network/integration/v1/sites/${realSiteId}/hotspot/vouchers`;
+    const cloudUrl = 'https://api.ui.com/v1/connector/consoles/' + siteConfig.consoleId + '/proxy/network/integration/v1/sites/' + realSiteId + '/hotspot/vouchers';
     
+    console.log(`[Sync Single Site] Fetching initial voucher inventory from controller...`);
     let vouchers = fetchAllVouchersFromCloud(cloudUrl);
     
     // 1. Replenish Standard 8-Hour Passes (480 minutes, Target: 20)
     const target8h = 20;
     let valid8h = vouchers.filter(v => v.expired === false && v.authorizedGuestCount === 0 && v.timeLimitMinutes === 480);
+    console.log(`[Sync Single Site] 8-Hour Passes: Found ${valid8h.length} valid unused (Target: ${target8h})`);
     if (valid8h.length < target8h) {
       const needed8h = target8h - valid8h.length;
+      console.log(`[API POST] Replenishing 8-Hour Passes: Generating ${needed8h} new vouchers...`);
       const payload8h = { count: needed8h, name: "Google Sheet Sync (8h)", authorizedGuestLimit: 1, timeLimitMinutes: 480 };
-      UrlFetchApp.fetch(cloudUrl, {
+      const resp8h = UrlFetchApp.fetch(cloudUrl, {
         method: 'post', contentType: 'application/json',
         headers: { 'X-API-Key': API_KEY, 'Accept': 'application/json' },
         payload: JSON.stringify(payload8h), muteHttpExceptions: true
       });
+      console.log(`[API POST] 8-Hour replenishment HTTP status: ${resp8h.getResponseCode()}`);
+      if (resp8h.getResponseCode() >= 400) {
+        console.error(`[API POST Error] 8-Hour generation failed: ${resp8h.getContentText()}`);
+      }
     }
 
     // 2. Replenish Extended 3-Day Passes (4320 minutes, Target: 5)
     const target3d = 5;
     let valid3d = vouchers.filter(v => v.expired === false && v.authorizedGuestCount === 0 && v.timeLimitMinutes === 4320);
+    console.log(`[Sync Single Site] 3-Day Passes: Found ${valid3d.length} valid unused (Target: ${target3d})`);
     if (valid3d.length < target3d) {
       const needed3d = target3d - valid3d.length;
+      console.log(`[API POST] Replenishing 3-Day Passes: Generating ${needed3d} new vouchers...`);
       const payload3d = { count: needed3d, name: "Google Sheet Sync (3d)", authorizedGuestLimit: 1, timeLimitMinutes: 4320 };
-      UrlFetchApp.fetch(cloudUrl, {
+      const resp3d = UrlFetchApp.fetch(cloudUrl, {
         method: 'post', contentType: 'application/json',
         headers: { 'X-API-Key': API_KEY, 'Accept': 'application/json' },
         payload: JSON.stringify(payload3d), muteHttpExceptions: true
       });
+      console.log(`[API POST] 3-Day replenishment HTTP status: ${resp3d.getResponseCode()}`);
+      if (resp3d.getResponseCode() >= 400) {
+        console.error(`[API POST Error] 3-Day generation failed: ${resp3d.getContentText()}`);
+      }
     }
 
+    console.log(`[Sync Single Site] Pausing 2.5 seconds for controller database propagation...`);
     Utilities.sleep(2500); 
     
+    console.log(`[Sync Single Site] Re-fetching voucher inventory from controller after generation...`);
     vouchers = fetchAllVouchersFromCloud(cloudUrl);
     let validVouchers = vouchers.filter(v => v.expired === false && v.authorizedGuestCount === 0 && (v.timeLimitMinutes === 480 || v.timeLimitMinutes === 4320));
     validVouchers.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     
-    if (sheet.getLastRow() > 1) {
-      sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).clearContent();
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      console.log(`[Sheet Ops] Clearing existing data rows 2 to ${lastRow} in tab "${siteConfig.siteName}".`);
+      sheet.getRange(2, 1, lastRow - 1, 3).clearContent();
+    } else {
+      console.log(`[Sheet Ops] No existing data rows to clear in tab "${siteConfig.siteName}".`);
     }
     
     const outputData = validVouchers.map(v => {
@@ -294,7 +339,11 @@ function syncSingleSiteVouchers(siteConfig) {
     });
     
     if (outputData.length > 0) {
+      console.log(`[Sheet Ops] Writing ${outputData.length} active voucher rows to sheet range A2:C${outputData.length + 1} on tab "${siteConfig.siteName}".`);
       sheet.getRange(2, 1, outputData.length, 3).setValues(outputData);
+      console.log(`[Sheet Ops Writeback Success] Sheet update completed for "${siteConfig.siteName}".`);
+    } else {
+      console.warn(`[Sheet Ops Warning] No valid active vouchers found to write for "${siteConfig.siteName}".`);
     }
   } catch (err) {
     console.error(`Error syncing hardware for ${siteConfig.siteName}: ${err.message}`);
@@ -306,10 +355,12 @@ function syncSingleSiteVouchers(siteConfig) {
  */
 function clearActiveSheetTabVouchers() {
   const sheetName = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getName();
+  console.log(`[Clear Active Tab] Triggered for tab: "${sheetName}"`);
   const sites = getParsedSitesConfig();
   const activeSite = sites.find(s => s.siteName === sheetName);
   
   if (!activeSite) {
+    console.warn(`[Clear Active Tab] No site configuration matching tab name: "${sheetName}"`);
     SpreadsheetApp.getUi().alert("Operation Cancelled", "The active spreadsheet tab name does not match any configured school profile in your JSON variables properties box.", SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
@@ -324,6 +375,7 @@ function clearActiveSheetTabVouchers() {
     logToUiToast("Wipe complete! Re-syncing tab profile...", "Success 🧹");
     syncSingleSiteVouchers(activeSite);
   } catch (e) {
+    console.error(`[Clear Active Tab Error] Failed to clear vouchers for "${activeSite.siteName}": ${e.message}`);
     logToUiToast(`Purge Error: ${e.message}`, "Failed ❌");
   }
 }
@@ -336,7 +388,10 @@ function doGet(e) {
   const inboundToken = (e && e.parameter) ? e.parameter.t : null;
   const targetSiteName = (e && e.parameter) ? e.parameter.site : null;
 
+  console.log(`[Web App doGet] Request received. Target site: "${targetSiteName}", Token provided: ${!!inboundToken}`);
+
   if (!currentToken || inboundToken !== currentToken || !targetSiteName) {
+    console.warn(`[Web App doGet] Access Denied: Token validation failed or missing parameters.`);
     return HtmlService.createHtmlOutput(`
       <div style="font-family:sans-serif; text-align:center; padding-top:60px; background-color:#f8fafc; height:100vh; margin:0;">
         <div style="max-width:450px; margin:0 auto; background:white; padding:40px; border-radius:8px; border:1px solid #e2e8f0;">
@@ -353,8 +408,9 @@ function doGet(e) {
 
   if (matchedSite) {
     try {
+      console.log(`[Web App doGet] Fetching live vouchers from controller for site: ${targetSiteName}`);
       const realSiteId = getValidSiteId(matchedSite.consoleId);
-      const cloudUrl = `https://api.ui.com/v1/connector/consoles/${matchedSite.consoleId}/proxy/network/integration/v1/sites/${realSiteId}/hotspot/vouchers`;
+      const cloudUrl = 'https://api.ui.com/v1/connector/consoles/' + matchedSite.consoleId + '/proxy/network/integration/v1/sites/' + realSiteId + '/hotspot/vouchers';
       let validVouchers = fetchAllVouchersFromCloud(cloudUrl).filter(v => v.expired === false && v.authorizedGuestCount === 0 && (v.timeLimitMinutes === 480 || v.timeLimitMinutes === 4320));
       validVouchers.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       
@@ -364,10 +420,13 @@ function doGet(e) {
         const durationText = v.timeLimitMinutes === 4320 ? '3 Days' : '8 Hours';
         return [code, v.createdAt ? new Date(v.createdAt).toLocaleString() : 'N/A', durationText];
       });
+      console.log(`[Web App doGet] Prepared ${liveVouchersData.length} live vouchers for HTML output.`);
     } catch (error) {
+      console.warn(`[Web App doGet Warning] Live API fetch failed for "${targetSiteName}": ${error.message}. Falling back to sheet tab data.`);
       liveVouchersData = getTabFallbackData(targetSiteName);
     }
   } else {
+    console.warn(`[Web App doGet Warning] Site profile "${targetSiteName}" not found in JSON config. Falling back to sheet tab data.`);
     liveVouchersData = getTabFallbackData(targetSiteName);
   }
 
@@ -382,6 +441,7 @@ function doGet(e) {
  */
 function openPrintablePage() {
   if (!DEPLOYMENT_ID) {
+    console.error("[openPrintablePage] UNIFI_DEPLOYMENT_ID is not configured in Script Properties.");
     SpreadsheetApp.getUi().alert("Setup Required", "Please save your UNIFI_DEPLOYMENT_ID to Script Properties first.", SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
@@ -419,26 +479,39 @@ function logToUiToast(msg, title) {
 // ==========================================
 
 function getParsedSitesConfig() {
-  if (!SITES_JSON) return [];
+  if (!SITES_JSON) {
+    console.warn("[getParsedSitesConfig] UNIFI_SITES_CONFIG Script Property is empty.");
+    return [];
+  }
   try {
     const parsed = JSON.parse(SITES_JSON);
     return parsed.map(site => {
-      if (!site.hasOwnProperty('purgeBeforeSync')) {
+      if (!Object.prototype.hasOwnProperty.call(site, 'purgeBeforeSync')) {
         site.purgeBeforeSync = false;
       }
       return site;
     });
-  } catch(e) { return []; }
+  } catch(e) {
+    console.error(`[getParsedSitesConfig Error] Failed to parse UNIFI_SITES_CONFIG JSON: ${e.message}`);
+    return [];
+  }
 }
 
 function getTabFallbackData(tabName) {
+  console.log(`[Fallback Data] Reading fallback data from sheet tab: "${tabName}"`);
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(tabName);
     if (sheet && sheet.getLastRow() > 1) {
-      const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
+      const lastRow = sheet.getLastRow();
+      console.log(`[Fallback Data] Found ${lastRow - 1} data rows on tab "${tabName}".`);
+      const data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
       return data.map(row => [row[0], row[2], row[1]]);
+    } else {
+      console.warn(`[Fallback Data] Tab "${tabName}" does not exist or has no rows past header.`);
     }
-  } catch(e) {}
+  } catch(e) {
+    console.error(`[Fallback Data Error] Reading tab "${tabName}" failed: ${e.message}`);
+  }
   return [];
 }
 
@@ -448,30 +521,53 @@ function getOrGenerateWeeklyToken(forceNew) {
   if (!token || forceNew) {
     token = Utilities.getUuid(); 
     props.setProperty('WEEKLY_ACCESS_TOKEN', token);
+    console.log(`[Weekly Token] Generated new weekly security access token.`);
+  } else {
+    console.log(`[Weekly Token] Using existing weekly security access token.`);
   }
   return token;
 }
 
 function fetchAllVouchersFromCloud(baseUrl) {
   let combinedVouchers = []; let offset = 0; const pageLimit = 500; let keepsQuerying = true;
+  console.log(`[API Fetch] Starting paginated voucher retrieval from: ${baseUrl}`);
   while (keepsQuerying) {
-    const response = UrlFetchApp.fetch(`${baseUrl}?limit=${pageLimit}&offset=${offset}`, { method: 'get', headers: { 'X-API-Key': API_KEY, 'Accept': 'application/json' }, muteHttpExceptions: true });
-    if (response.getResponseCode() !== 200) throw new Error("Database read failed.");
+    const fetchUrl = baseUrl + '?limit=' + pageLimit + '&offset=' + offset;
+    console.log(`[API Fetch] Querying page at offset ${offset} (limit ${pageLimit})...`);
+    const response = UrlFetchApp.fetch(fetchUrl, { method: 'get', headers: { 'X-API-Key': API_KEY, 'Accept': 'application/json' }, muteHttpExceptions: true });
+    const code = response.getResponseCode();
+    console.log(`[API Fetch] HTTP Status: ${code}`);
+    if (code !== 200) {
+      console.error(`[API Fetch Error] Database read failed (HTTP ${code}): ${response.getContentText()}`);
+      throw new Error('Database read failed (HTTP ' + code + ')');
+    }
     const result = JSON.parse(response.getContentText());
     const dataBatch = result.data || result.vouchers || [];
+    console.log(`[API Fetch] Retrieved ${dataBatch.length} vouchers in batch (Total available on controller: ${result.totalCount || 'N/A'})`);
     combinedVouchers = combinedVouchers.concat(dataBatch);
     offset += pageLimit;
     if (combinedVouchers.length >= (result.totalCount || 0) || dataBatch.length === 0) keepsQuerying = false;
   }
+  console.log(`[API Fetch Complete] Total vouchers gathered across all pages: ${combinedVouchers.length}`);
   return combinedVouchers;
 }
 
 function getValidSiteId(consoleIdString) {
-  const response = UrlFetchApp.fetch(`https://api.ui.com/v1/connector/consoles/${consoleIdString}/proxy/network/integration/v1/sites`, { method: 'get', headers: { 'X-API-Key': API_KEY, 'Accept': 'application/json' }, muteHttpExceptions: true });
-  if (response.getResponseCode() !== 200) throw new Error("Site verification failed.");
+  const apiUrl = 'https://api.ui.com/v1/connector/consoles/' + consoleIdString + '/proxy/network/integration/v1/sites';
+  console.log(`[API Site Verification] Requesting site definitions for console: ${consoleIdString}`);
+  const response = UrlFetchApp.fetch(apiUrl, { method: 'get', headers: { 'X-API-Key': API_KEY, 'Accept': 'application/json' }, muteHttpExceptions: true });
+  const code = response.getResponseCode();
+  console.log(`[API Site Verification] HTTP Status: ${code}`);
+  if (code !== 200) {
+    console.error(`[API Site Verification Error] HTTP ${code}: ${response.getContentText()}`);
+    throw new Error('Site verification failed (HTTP ' + code + ')');
+  }
   const sites = JSON.parse(response.getContentText()).data || [];
+  console.log(`[API Site Verification] Found ${sites.length} site profiles on console.`);
   const match = sites.find(s => s.internalReference === 'default' || s.name.toLowerCase() === 'default');
-  return match ? match.id : (sites.length > 0 ? sites[0].id : null);
+  const resolvedId = match ? match.id : (sites.length > 0 ? sites[0].id : null);
+  console.log(`[API Site Verification] Selected site ID: ${resolvedId}`);
+  return resolvedId;
 }
 
 /**
